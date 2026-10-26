@@ -5,9 +5,6 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-/** Only this email is treated as admin */
-export const ADMIN_EMAIL = 'rusirudinushrox@gmail.com'
-
 export type Profile = {
   id: string
   email: string | null

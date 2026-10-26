@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase, ADMIN_EMAIL } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 import { useAuth } from '../App'
 
 export default function Auth() {
@@ -24,17 +24,25 @@ export default function Auth() {
       const { data, error } = await supabase.auth.signUp({ email, password })
       if (error) { setErr(error.message); setLoading(false); return }
       if (data.user) {
-        const isAdmin = email.toLowerCase() === ADMIN_EMAIL.toLowerCase()
+        // First user in the system becomes admin automatically
+        const { count } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true })
+
+        const isFirstUser = (count ?? 0) === 0
+        const role = isFirstUser ? 'admin' : 'worker'
+        const can_post = isFirstUser
+
         await supabase.from('profiles').upsert({
           id: data.user.id,
           email,
           full_name: name || null,
-          role: isAdmin ? 'admin' : 'worker',
-          can_post: isAdmin,
+          role,
+          can_post,
         })
         await refreshProfile()
-        setMsg(isAdmin
-          ? 'Admin account ready'
+        setMsg(isFirstUser
+          ? 'Admin account ready — you are the first user'
           : 'Account created. Job post කරන්න Admin approval ඕනේ.')
         setTimeout(() => nav('/'), 1000)
       }
@@ -60,6 +68,7 @@ export default function Auth() {
               <input className="input" value={name} onChange={e => setName(e.target.value)} style={{ marginBottom: 10 }} />
               <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: 10 }}>
                 Default: normal user (jobs බලන්න). Employer වෙන්න Admin approve කරන්න ඕනේ.
+                First user automatically becomes Admin.
               </p>
             </>
           )}
