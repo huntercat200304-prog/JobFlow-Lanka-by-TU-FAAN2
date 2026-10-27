@@ -53,13 +53,14 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Hidden clock: expire jobs past work_date (status -> expired), no UI
+  // Auto-expire only PART-TIME jobs past work_date (records stay, status -> expired)
   useEffect(() => {
     let cancelled = false
     async function expireJobs() {
       const { data } = await supabase
         .from('jobs')
-        .select('id, work_date, status')
+        .select('id, work_date, status, employment_type')
+        .eq('employment_type', 'part-time')
         .in('status', ['new', 'reviewed', 'contacted'])
         .limit(200)
       if (cancelled || !data) return
@@ -74,7 +75,7 @@ export default function App() {
       }
     }
     expireJobs()
-    const t = setInterval(expireJobs, 5 * 60 * 1000) // every 5 min, not shown
+    const t = setInterval(expireJobs, 5 * 60 * 1000)
     return () => { cancelled = true; clearInterval(t) }
   }, [])
 

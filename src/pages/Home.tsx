@@ -76,7 +76,14 @@ export default function Home() {
     jobs.filter(j => !district || j.district === district).map(j => j.city).filter(Boolean)
   )].sort() as string[]
 
-  let filtered = jobs
+  // Public list: hide expired part-time; keep full-time always (unless status closed/rejected)
+  let filtered = jobs.filter(j => {
+    if (j.employment_type === 'full-time') return j.status !== 'closed' && j.status !== 'rejected'
+    // part-time: hide when past work_date or status expired
+    if (j.status === 'expired') return false
+    if (!isJobActiveByDate(j.work_date)) return false
+    return true
+  })
   if (district) filtered = filtered.filter(j => j.district === district)
   if (city) filtered = filtered.filter(j => j.city === city)
   if (type) filtered = filtered.filter(j => j.employment_type === type)
@@ -95,14 +102,14 @@ export default function Home() {
     filtered = filtered.filter(j =>
       (j.title || '').toLowerCase().includes(qq) ||
       (j.description || '').toLowerCase().includes(qq) ||
-      (j.city || '').toLowerCase().includes(qq)
+      (j.city || '').toLowerCase().includes(qq) ||
+      (j.raw_text || '').toLowerCase().includes(qq)
     )
   }
 
   useEffect(() => {
     for (const job of filtered) {
       if (viewed.current.has(job.id)) continue
-      if (!isJobActiveByDate(job.work_date) || job.status === 'expired') continue
       viewed.current.add(job.id)
       trackEvent('job_view', { job_id: job.id, district: job.district || undefined, user_id: user?.id })
     }
@@ -184,16 +191,12 @@ export default function Home() {
     }
     const { error } = await supabase.from('job_feedback').insert(row)
     if (error) {
-      setFbMsg('Save failed — run SQL update?')
+      setFbMsg('Save failed')
       return
     }
     setFbMsg('Thanks!')
     if (rating) setMyStar(rating)
     openDetails(detail)
-  }
-
-  function isExpired(job: Job) {
-    return job.status === 'expired' || !isJobActiveByDate(job.work_date)
   }
 
   return (
@@ -237,9 +240,8 @@ export default function Home() {
         <div className="grid">
           {filtered.map(job => {
             const g = guessGender(job)
-            const expired = isExpired(job)
             return (
-              <div key={job.id} className="job-card" style={expired ? { opacity: 0.75 } : undefined}>
+              <div key={job.id} className="job-card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
                   <strong style={{ color: 'var(--accent)' }}>{job.title || job.job_type || 'Job'}</strong>
                   <small style={{ color: 'var(--muted)' }}>
@@ -247,7 +249,6 @@ export default function Home() {
                   </small>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                  {expired && <span className="pill orange">⛔ Expired</span>}
                   {g && (
                     <span className="pill purple" style={{ fontWeight: 600 }}>
                       {genderIcon(g)} {g}
@@ -264,12 +265,12 @@ export default function Home() {
                   {job.employment_type && (
                     <span className="pill">{job.employment_type === 'full-time' ? 'Full-time' : 'Part-time'}</span>
                   )}
-                  {job.immediate_hiring && !expired && <span className="pill orange">⚡ Immediate</span>}
+                  {job.immediate_hiring && <span className="pill orange">⚡ Immediate</span>}
                 </div>
                 {job.description && (
                   <div style={{
                     fontSize: '0.88rem', color: 'var(--muted)', whiteSpace: 'pre-wrap', marginBottom: 10,
-                    maxHeight: 72, overflow: 'hidden'
+                    lineHeight: 1.45
                   }}>
                     {job.description}
                   </div>
@@ -281,7 +282,7 @@ export default function Home() {
                   <button type="button" className="btn btn-secondary btn-sm" onClick={() => shareJob(job)}>
                     Share
                   </button>
-                  {job.contact_phone && !expired && (
+                  {job.contact_phone && (
                     <a
                       className="btn btn-primary btn-sm"
                       href={waLink(job.contact_phone, `Hi, I'm interested in the job: ${job.title || ''}`)}
@@ -299,7 +300,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Details modal — no AI */}
       {detail && (
         <div
           role="dialog"
@@ -324,10 +324,6 @@ export default function Home() {
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDetail(null)}>✕</button>
             </div>
 
-            {isExpired(detail) && (
-              <div className="msg err" style={{ marginBottom: 10 }}>⛔ This job is Expired</div>
-            )}
-
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
               {guessGender(detail) && (
                 <span className="pill purple">{genderIcon(guessGender(detail)!)} {guessGender(detail)}</span>
@@ -338,6 +334,9 @@ export default function Home() {
                 <span className="pill">🕘 {[detail.work_date, detail.work_time].filter(Boolean).join(' ')}</span>
               )}
               {detail.payment_text && <span className="pill gold">💰 {detail.payment_text}</span>}
+              {detail.employment_type && (
+                <span className="pill">{detail.employment_type === 'full-time' ? 'Full-time' : 'Part-time'}</span>
+              )}
             </div>
 
             {detail.description && (
@@ -351,6 +350,15 @@ export default function Home() {
                 📞 {detail.contact_phone}
                 <span style={{ marginLeft: 8 }}>(WhatsApp only — no call button)</span>
               </p>
+            )}
+
+            {detail.raw_text && (
+              <div style={{ marginBottom: 14 }}>
+                <div className="label">Original WhatsApp message</div>
+                <div className="preview" style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+                  {detail.raw_text}
+                </div>
+              </div>
             )}
 
             <div className="label">Stats</div>
@@ -399,7 +407,7 @@ export default function Home() {
             {fbMsg && <div className="msg ok">{fbMsg}</div>}
 
             <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-              {detail.contact_phone && !isExpired(detail) && (
+              {detail.contact_phone && (
                 <a
                   className="btn btn-primary btn-sm"
                   href={waLink(detail.contact_phone, `Hi, I'm interested in: ${detail.title || ''}`)}
