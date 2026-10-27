@@ -1,6 +1,6 @@
 import { useEffect, useState, createContext, useContext } from 'react'
 import { Routes, Route, Link, Navigate } from 'react-router-dom'
-import { supabase, Profile, ADMIN_EMAIL, canPostJobs } from './lib/supabase'
+import { supabase, Profile, canPostJobs } from './lib/supabase'
 import Home from './pages/Home'
 import PostJob from './pages/PostJob'
 import Auth from './pages/Auth'
@@ -27,33 +27,27 @@ export default function App() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
 
-  async function loadProfile(uid: string, email?: string | null) {
+  async function loadProfile(uid: string) {
     const { data } = await supabase.from('profiles').select('*').eq('id', uid).single()
-    let p = data as Profile | null
-    // Auto-admin for your Gmail
-    if (p && email && email.toLowerCase() === ADMIN_EMAIL.toLowerCase() && p.role !== 'admin') {
-      await supabase.from('profiles').update({ role: 'admin', can_post: true }).eq('id', uid)
-      p = { ...p, role: 'admin', can_post: true }
-    }
-    setProfile(p)
+    setProfile((data as Profile) || null)
   }
 
   async function refreshProfile() {
     const { data: { user: u } } = await supabase.auth.getUser()
-    if (u) await loadProfile(u.id, u.email)
+    if (u) await loadProfile(u.id)
   }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const u = session?.user ?? null
       setUser(u ? { id: u.id, email: u.email } : null)
-      if (u) loadProfile(u.id, u.email).finally(() => setLoading(false))
+      if (u) loadProfile(u.id).finally(() => setLoading(false))
       else setLoading(false)
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       const u = session?.user ?? null
       setUser(u ? { id: u.id, email: u.email } : null)
-      if (u) loadProfile(u.id, u.email)
+      if (u) loadProfile(u.id)
       else setProfile(null)
     })
     return () => subscription.unsubscribe()
